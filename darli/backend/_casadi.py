@@ -1,5 +1,5 @@
-import casadi_kin_dyn.casadi_kin_dyn as ckd
-
+import pinocchio.casadi as cpin
+import pinocchio as pin
 from .liecasadi import SO3
 from ._base import BackendBase, ConeBase, Frame, BodyInfo, JointType, CentroidalDynamics
 from ..utils.arrays import CasadiLikeFactory, ArrayLike
@@ -157,26 +157,13 @@ class CasadiBackend(BackendBase):
         root_joint: JointType | None = JointType.OMIT,
         fixed_joints: Dict[str, float | npt.ArrayLike] = None,
     ) -> None:
-        super().__init__(urdf_path)
-        if not fixed_joints:
-            fixed_joints = {}
+        super().__init__(urdf_path, root_joint, fixed_joints)
 
-        self.__joint_types = {
-            JointType.FREE_FLYER: ckd.CasadiKinDyn.JointType.FREE_FLYER,
-            JointType.PLANAR: ckd.CasadiKinDyn.JointType.PLANAR,
-            JointType.OMIT: ckd.CasadiKinDyn.JointType.OMIT,
-        }
+        self.__model: cpin.Model = cpin.Model(self._pinmodel)
+        self.__data: cpin.Data = self.__model.createData()
 
-        self.__urdf_path: str = urdf_path
-        urdf = open(self.__urdf_path, "r").read()
-        self.__kindyn: ckd.CasadiKinDyn = ckd.CasadiKinDyn(
-            urdf,
-            root_joint=self.__joint_types[root_joint],
-            fixed_joints=fixed_joints,
-        )
-
-        self.__nq = self.__kindyn.nq()
-        self.__nv = self.__kindyn.nv()
+        self.__nq = self.__model.nq
+        self.__nv = self.__model.nv
         self.__nu = self.__nv
 
         self._q = cs.SX.sym("q", self.__nq)
@@ -186,9 +173,9 @@ class CasadiBackend(BackendBase):
         self._tau = cs.SX.sym("tau", self.__nv)
 
         self.__frame_mapping = {
-            "local": ckd.CasadiKinDyn.LOCAL,
-            "world": ckd.CasadiKinDyn.WORLD,
-            "world_aligned": ckd.CasadiKinDyn.LOCAL_WORLD_ALIGNED,
+            "local": pin.LOCAL,
+            "world": pin.WORLD,
+            "world_aligned": pin.LOCAL_WORLD_ALIGNED,
         }
 
         self.__frame_types = self.__frame_mapping.keys()
@@ -222,6 +209,14 @@ class CasadiBackend(BackendBase):
         v: ArrayLike | None = None,
         dv: ArrayLike | None = None,
     ) -> ArrayLike:
+        return cpin.rnea(
+            self.__model,
+            self.__data,
+            q if q is not None else self._q,
+            v if v is not None else self._v,
+            dv if dv is not None else self._dv,
+        )
+
         return self.__kindyn.rnea()(
             q=q if q is not None else self._q,
             v=v if v is not None else self._v,
@@ -234,6 +229,13 @@ class CasadiBackend(BackendBase):
         v: ArrayLike | None = None,
         tau: ArrayLike | None = None,
     ) -> ArrayLike:
+        return cpin.aba(
+            self.__model,
+            self.__data,
+            q if q is not None else self._q,
+            v if v is not None else self._v,
+            tau if tau is not None else self._tau,
+        )
         return self.__kindyn.aba()(
             q=q if q is not None else self._q,
             v=v if v is not None else self._v,
@@ -241,19 +243,32 @@ class CasadiBackend(BackendBase):
         )["a"]
 
     def inertia_matrix(self, q: ArrayLike | None = None) -> ArrayLike:
-        return self.__kindyn.crba()(q=q if q is not None else self._q)["B"]
+        return cpin.crba(self.__model, self.__data, q if q is not None else self._q)
+        # return self.__kindyn.crba()(q=q if q is not None else self._q)["B"]
 
     def kinetic_energy(
         self, q: ArrayLike | None = None, v: ArrayLike | None = None
     ) -> ArrayLike:
+        return cpin.computeKineticEnergy(
+            self.__model,
+            self.__data,
+            q if q is not None else self._q,
+            v if v is not None else self._v,
+        )
         return self.__kindyn.kineticEnergy()(
             q=q if q is not None else self._q, v=v if v is not None else self._v
         )["DT"]
 
     def potential_energy(self, q: ArrayLike | None = None) -> ArrayLike:
+        return cpin.computePotentialEnergy(
+            self.__model, self.__data, q if q is not None else self._q
+        )
         return self.__kindyn.potentialEnergy()(q=q if q is not None else self._q)["DU"]
 
     def jacobian(self, q: ArrayLike | None = None) -> ArrayLike:
+        return cpin.jacobianCenterOfMass(
+            self.__model, self.__data, q if q is not None else self._q
+        )
         return self.__kindyn.jacobianCenterOfMass(False)(
             q=q if q is not None else self._q
         )["Jcom"]
@@ -271,6 +286,10 @@ class CasadiBackend(BackendBase):
         )
 
     def com_pos(self, q: ArrayLike | None = None) -> ArrayLike:
+        return cpin.centerOfMass(
+            self.__model, self.__data, q if q is not None else self._q
+        )
+
         return self.__kindyn.centerOfMass()(
             q=q if q is not None else self._q,
             v=self.math.zeros(self.nv).array,
@@ -280,6 +299,15 @@ class CasadiBackend(BackendBase):
     def com_vel(
         self, q: ArrayLike | None = None, v: ArrayLike | None = None
     ) -> ArrayLike:
+        cpin.centerOfMass(
+            self.__model,
+            self.__data,
+            q if q is not None else self._q,
+            v if v is not None else self._v,
+        )
+
+        return self.__data.vcom[0]
+
         return self.__kindyn.centerOfMass()(
             q=q if q is not None else self._q,
             v=v if v is not None else self._v,
@@ -292,6 +320,16 @@ class CasadiBackend(BackendBase):
         v: ArrayLike | None = None,
         dv: ArrayLike | None = None,
     ) -> ArrayLike:
+        cpin.centerOfMass(
+            self.__model,
+            self.__data,
+            q if q is not None else self._q,
+            v if v is not None else self._v,
+            dv if dv is not None else self._dv,
+        )
+
+        return self.__data.acom[0]
+        # return None
         return self.__kindyn.centerOfMass()(
             q=q if q is not None else self._q,
             v=v if v is not None else self._v,
@@ -304,6 +342,14 @@ class CasadiBackend(BackendBase):
         v: ArrayLike | None = None,
         dv: ArrayLike | None = None,
     ) -> ArrayLike:
+        return cpin.computeJointTorqueRegressor(
+            self.__model,
+            self.__data,
+            q if q is not None else self._q,
+            v if v is not None else self._v,
+            dv if dv is not None else self._dv,
+        )
+
         return self.__kindyn.jointTorqueRegressor()(
             q=q if q is not None else self._q,
             v=v if v is not None else self._v,
@@ -315,6 +361,13 @@ class CasadiBackend(BackendBase):
         q: ArrayLike | None = None,
         v: ArrayLike | None = None,
     ) -> ArrayLike:
+        return cpin.computeKineticEnergyRegressor(
+            self.__model,
+            self.__data,
+            q if q is not None else self._q,
+            v if v is not None else self._v,
+        )
+
         return self.__kindyn.kineticEnergyRegressor()(
             q=q if q is not None else self._q,
             v=v if v is not None else self._v,
@@ -324,6 +377,11 @@ class CasadiBackend(BackendBase):
         self,
         q: ArrayLike | None = None,
     ) -> ArrayLike:
+        return cpin.computePotentialEnergyRegressor(
+            self.__model,
+            self.__data,
+            q if q is not None else self._q,
+        )
         return self.__kindyn.potentialEnergyRegressor()(
             q=q if q is not None else self._q,
         )["potential_regressor"]
@@ -364,6 +422,7 @@ class CasadiBackend(BackendBase):
         q_inp: ArrayLike | None = None,
         v_inp: ArrayLike | None = None,
     ):
+        raise NotImplementedError("This function is not implemented yet")
         # store functions
         spatial_kinetic_energy_jacobian = self._spatial_kinetic_energy_jacobian()
         torque_reg_fn = self.__kindyn.jointTorqueRegressor()
@@ -434,49 +493,47 @@ class CasadiBackend(BackendBase):
     def update_body(self, body: str, body_urdf_name: str = None) -> BodyInfo:
         if body_urdf_name is None:
             body_urdf_name = body
-        return BodyInfo(
-            position=self.__kindyn.fk(body_urdf_name)(q=self._q)["ee_pos"],
-            rotation=self.__kindyn.fk(body_urdf_name)(q=self._q)["ee_rot"],
-            quaternion=SO3.from_matrix(
-                self.__kindyn.fk(body_urdf_name)(q=self._q)["ee_rot"]
-            ).xyzw,
-            jacobian={
-                Frame.from_str(frame): self.__kindyn.jacobian(
-                    body_urdf_name, self.__frame_mapping[frame]
-                )(q=self._q)["J"]
-                for frame in self.__frame_types
-            },
-            lin_vel={
-                Frame.from_str(frame): self.__kindyn.frameVelocity(
-                    body_urdf_name, self.__frame_mapping[frame]
-                )(q=self._q, qdot=self._v)["ee_vel_linear"]
-                for frame in self.__frame_types
-            },
-            ang_vel={
-                Frame.from_str(frame): self.__kindyn.frameVelocity(
-                    body_urdf_name, self.__frame_mapping[frame]
-                )(q=self._q, qdot=self._v)["ee_vel_angular"]
-                for frame in self.__frame_types
-            },
-            lin_acc={
-                Frame.from_str(frame): self.__kindyn.frameAcceleration(
-                    body_urdf_name, self.__frame_mapping[frame]
-                )(q=self._q, qdot=self._v, qddot=self._dv)["ee_acc_linear"]
-                for frame in self.__frame_types
-            },
-            ang_acc={
-                Frame.from_str(frame): self.__kindyn.frameAcceleration(
-                    body_urdf_name, self.__frame_mapping[frame]
-                )(q=self._q, qdot=self._v, qddot=self._dv)["ee_acc_angular"]
-                for frame in self.__frame_types
-            },
-            djacobian={
-                Frame.from_str(frame): self.__kindyn.jacobianTimeVariation(
-                    body_urdf_name, self.__frame_mapping[frame]
-                )(q=self._q, v=self._v)["dJ"]
-                for frame in self.__frame_types
-            },
+
+        frame_idx = self.__model.getFrameId(body_urdf_name)
+
+        jacobian = {}
+        djacobian = {}
+        lin_vel = {}
+        ang_vel = {}
+        lin_acc = {}
+        ang_acc = {}
+        for frame_str, fstr in self.__frame_mapping.items():
+            frame = Frame.from_str(frame_str)
+
+            jacobian[frame] = cpin.getFrameJacobian(
+                self.__model, self.__data, frame_idx, fstr
+            )
+            djacobian[frame] = cpin.getFrameJacobianTimeVariation(
+                self.__model, self.__data, frame_idx, fstr
+            )
+            lin_vel[frame] = jacobian[frame][:3] @ self._v
+            ang_vel[frame] = jacobian[frame][3:] @ self._v
+            lin_acc[frame] = (
+                jacobian[frame][:3] @ self._dv + djacobian[frame][:3] @ self._v
+            )
+            ang_acc[frame] = (
+                jacobian[frame][3:] @ self._dv + djacobian[frame][3:] @ self._v
+            )
+
+        result = BodyInfo(
+            position=self.__data.oMf[frame_idx].translation,
+            rotation=self.__data.oMf[frame_idx].rotation,
+            quaternion=cpin.se3ToXYZQUAT(self.__data.oMf[frame_idx])[3:],
+            jacobian=jacobian,
+            djacobian=djacobian,
+            lin_vel=lin_vel,
+            ang_vel=ang_vel,
+            lin_acc=lin_acc,
+            ang_acc=ang_acc,
         )
+        self.__body_info_cache[body_urdf_name] = result
+
+        return result
 
     def cone(
         self, force: ArrayLike | None, mu: float, type: str, X=None, Y=None
@@ -489,6 +546,8 @@ class CasadiBackend(BackendBase):
         v: ArrayLike | None = None,
         dt: float | cs.SX = 1.0,
     ) -> ArrayLike:
+        return cpin.integrate(self.__model, q, v * dt)
+
         if self.nq != self.nv:
             q = q if q is not None else self._q
             v = v if v is not None else self._v
@@ -541,25 +600,38 @@ class CasadiBackend(BackendBase):
         v: ArrayLike | None = None,
         dv: ArrayLike | None = None,
     ) -> CentroidalDynamics:
-        dyn = self.__kindyn.computeCentroidalDynamics()(
-            q=q if q is not None else self._q,
-            v=v if v is not None else self._v,
-            a=dv if dv is not None else self._dv,
+        if q is None and v is None and dv is None:
+            return CentroidalDynamics(
+                matrix=self.__data.Ag,
+                linear=self.__data.hg.linear,
+                angular=self.__data.hg.angular,
+                linear_dt=self.__data.dhg.linear,
+                angular_dt=self.__data.dhg.angular,
+                matrix_dt=self.__centroidal_derivatives[0],
+                dynamics_jacobian_q=self.__centroidal_derivatives[1],
+                dynamics_jacobian_v=self.__centroidal_derivatives[2],
+                dynamics_jacobian_dv=self.__centroidal_derivatives[3],
+            )
+
+        self._q = q if q is not None else self._q
+        self._v = v if v is not None else self._v
+        self._dv = dv if dv is not None else self._dv
+
+        cpin.computeCentroidalMomentumTimeVariation(
+            self.__model, self.__data, self._q, self._v, self._dv
         )
-        dyn_der = self.__kindyn.computeCentroidalDynamicsDerivatives()(
-            q=q if q is not None else self._q,
-            v=v if v is not None else self._v,
-            a=dv if dv is not None else self._dv,
+        cpin.computeCentroidalDynamicsDerivatives(
+            self.__model, self.__data, self._q, self._v, self._dv
         )
 
         return CentroidalDynamics(
-            matrix=dyn["Ag"],
-            linear=dyn["h_lin"],
-            angular=dyn["h_ang"],
-            linear_dt=dyn["dh_lin"],
-            angular_dt=dyn["dh_ang"],
-            matrix_dt=dyn_der["dh_dq"],
-            dynamics_jacobian_q=dyn_der["dhdot_dq"],
-            dynamics_jacobian_v=dyn_der["dhdot_dv"],
-            dynamics_jacobian_dv=dyn_der["dhdot_da"],
+            matrix=self.__data.Ag,
+            linear=self.__data.hg.linear,
+            angular=self.__data.hg.angular,
+            linear_dt=self.__data.dhg.linear,
+            angular_dt=self.__data.dhg.angular,
+            matrix_dt=self.__centroidal_derivatives[0],
+            dynamics_jacobian_q=self.__centroidal_derivatives[1],
+            dynamics_jacobian_v=self.__centroidal_derivatives[2],
+            dynamics_jacobian_dv=self.__centroidal_derivatives[3],
         )
