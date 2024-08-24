@@ -153,11 +153,11 @@ class CasadiBackend(BackendBase):
 
     def __init__(
         self,
-        urdf_path: str,
+        description_path: str,
         root_joint: JointType | None = JointType.OMIT,
         fixed_joints: Dict[str, float | npt.ArrayLike] = None,
     ) -> None:
-        super().__init__(urdf_path, root_joint, fixed_joints)
+        super().__init__(description_path, root_joint, fixed_joints)
 
         self.__model: cpin.Model = cpin.Model(self._pinmodel)
         self.__data: cpin.Data = self.__model.createData()

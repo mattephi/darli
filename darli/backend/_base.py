@@ -1,11 +1,35 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Callable, Dict, List
 from ..utils.arrays import ArrayLike, ArrayLikeFactory
 import pinocchio as pin
 import numpy as np
 import numpy.typing as npt
+import os
+
+
+def parse_description_type(description_path: str) -> Callable:
+    """Returns the appropriate Pinocchio model builder based on file extension.
+
+    Args:
+        description_path (str): Path to the description file.
+
+    Returns:
+        Callable: Pinocchio model builder function.
+
+    Raises:
+        ValueError: If the file extension is not recognized.
+    """
+    _, ext = os.path.splitext(description_path)
+    ext = ext.lower()
+
+    if ext == '.urdf':
+        return pin.buildModelFromUrdf
+    elif ext == '.xml':
+        return pin.buildModelFromMJCF
+    else:
+        raise ValueError(f"Unrecognized description extension: {ext}")
 
 
 class Frame(Enum):
@@ -97,26 +121,26 @@ class ConeBase(ABC):
 class PinocchioBased:
     def __init__(
         self,
-        urdf_path: str,
+        description_path: str,
         root_joint: JointType | None = None,
         fixed_joints: Dict[str, float | npt.ArrayLike] = None,
     ) -> None:
         if fixed_joints is None:
             fixed_joints = {}
 
-        self.__urdf_path = urdf_path
+        self.__description_path = description_path
 
         joint_types = {
             JointType.FREE_FLYER: pin.JointModelFreeFlyer(),
             JointType.PLANAR: pin.JointModelPlanar(),
         }
-
+        builder = parse_description_type(description_path)
         # pass root_joint if specified
         if root_joint is None or root_joint == JointType.OMIT:
-            model: pin.Model = pin.buildModelFromUrdf(urdf_path)
+            model: pin.Model = builder(description_path)
         else:
-            model: pin.Model = pin.buildModelFromUrdf(
-                urdf_path, joint_types[root_joint]
+            model: pin.Model = builder(
+                description_path, joint_types[root_joint]
             )
 
         # freeze joints and update coordinate
@@ -137,17 +161,16 @@ class PinocchioBased:
             else:
                 zero_q[joint_id] = joint_value
 
-        self._pinmodel: pin.Model = pin.buildReducedModel(
-            model,
-            freeze_joint_indices,
-            zero_q,
-        )
+        self._pinmodel: pin.Model = pin.buildReducedModel(model,
+                                                          freeze_joint_indices,
+                                                          zero_q,
+                                                          )
         self._pindata: pin.Data = self._pinmodel.createData()
 
     @property
-    def urdf_path(self) -> str:
+    def description_path(self) -> str:
         """Returns the path to the URDF file used to build the model."""
-        return self.__urdf_path
+        return self.__description_path
 
     @property
     def total_mass(self) -> float:

@@ -1,4 +1,4 @@
-name: base
+name: darli_dev
 channels:
   - conda-forge
 dependencies:
