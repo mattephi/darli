@@ -206,7 +206,7 @@ class PinocchioBackend(BackendBase):
         self.__dJcom_dt = pin.getCenterOfMassVelocityDerivatives(
             self.__model, self.__data
         )
-
+    
         if dv is not None or tau is not None:
             # we have to calculate centerOfMass only if we computed dv previously
             pin.centerOfMass(self.__model, self.__data, self._q, self._v, self._dv)
@@ -506,26 +506,27 @@ class PinocchioBackend(BackendBase):
         ang_acc = {}
         for frame_str, fstr in self.__frame_mapping.items():
             frame = Frame.from_str(frame_str)
-
+            pin.framesForwardKinematics(self.__model, self.__data, self._q)
             jacobian[frame] = pin.getFrameJacobian(
                 self.__model, self.__data, frame_idx, fstr
             )
             djacobian[frame] = pin.getFrameJacobianTimeVariation(
                 self.__model, self.__data, frame_idx, fstr
             )
-            lin_vel[frame] = jacobian[frame][:3] @ self._v
-            ang_vel[frame] = jacobian[frame][3:] @ self._v
+            # TODO: Redo this with standart pin functions
+            lin_vel[frame] = jacobian[frame][:3,:] @ self._v
+            ang_vel[frame] = jacobian[frame][3:,:] @ self._v
             lin_acc[frame] = (
-                jacobian[frame][:3] @ self._dv + djacobian[frame][:3] @ self._v
+                jacobian[frame][:3,:] @ self._dv + djacobian[frame][:3,:] @ self._v
             )
             ang_acc[frame] = (
-                jacobian[frame][3:] @ self._dv + djacobian[frame][3:] @ self._v
+                jacobian[frame][3:,:] @ self._dv + djacobian[frame][3:,:] @ self._v
             )
 
         result = BodyInfo(
             position=self.__data.oMf[frame_idx].translation,
             rotation=self.__data.oMf[frame_idx].rotation,
-            quaternion=pin.se3ToXYZQUAT(self.__data.oMf[frame_idx])[3:],
+            quaternion=pin.SE3ToXYZQUAT(self.__data.oMf[frame_idx])[3:],
             jacobian=jacobian,
             djacobian=djacobian,
             lin_vel=lin_vel,

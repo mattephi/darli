@@ -502,6 +502,7 @@ class CasadiBackend(BackendBase):
         ang_vel = {}
         lin_acc = {}
         ang_acc = {}
+        cpin.framesForwardKinematics(self.__model, self.__data, self._q)
         for frame_str, fstr in self.__frame_mapping.items():
             frame = Frame.from_str(frame_str)
 
@@ -511,19 +512,20 @@ class CasadiBackend(BackendBase):
             djacobian[frame] = cpin.getFrameJacobianTimeVariation(
                 self.__model, self.__data, frame_idx, fstr
             )
-            lin_vel[frame] = jacobian[frame][:3] @ self._v
-            ang_vel[frame] = jacobian[frame][3:] @ self._v
+            # TODO: Redo this with standart pin functions
+            lin_vel[frame] = jacobian[frame][:3,:] @ self._v
+            ang_vel[frame] = jacobian[frame][3:,:] @ self._v
             lin_acc[frame] = (
-                jacobian[frame][:3] @ self._dv + djacobian[frame][:3] @ self._v
+                jacobian[frame][:3,:] @ self._dv + djacobian[frame][:3,:] @ self._v
             )
             ang_acc[frame] = (
-                jacobian[frame][3:] @ self._dv + djacobian[frame][3:] @ self._v
+                jacobian[frame][3:,:] @ self._dv + djacobian[frame][3:,:] @ self._v
             )
 
         result = BodyInfo(
             position=self.__data.oMf[frame_idx].translation,
             rotation=self.__data.oMf[frame_idx].rotation,
-            quaternion=cpin.se3ToXYZQUAT(self.__data.oMf[frame_idx])[3:],
+            quaternion=cpin.SE3ToXYZQUAT(self.__data.oMf[frame_idx])[3:],
             jacobian=jacobian,
             djacobian=djacobian,
             lin_vel=lin_vel,
@@ -531,7 +533,8 @@ class CasadiBackend(BackendBase):
             lin_acc=lin_acc,
             ang_acc=ang_acc,
         )
-        self.__body_info_cache[body_urdf_name] = result
+        # DO WE NEED THIS IN CASADI BACKEND?
+        # self.__body_info_cache[body_urdf_name] = result
 
         return result
 

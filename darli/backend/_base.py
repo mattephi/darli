@@ -347,7 +347,7 @@ class BackendBase(ABC, PinocchioBased):
         pass
 
     @abstractmethod
-    def update_body(self, body: str, body_urdf_name: str = None) -> BodyInfo:
+    def update_body(self, body: str, body_description_name: str = None) -> BodyInfo:
         pass
 
     @abstractmethod
