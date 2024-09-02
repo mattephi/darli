@@ -513,13 +513,13 @@ class CasadiBackend(BackendBase):
                 self.__model, self.__data, frame_idx, fstr
             )
             # TODO: Redo this with standart pin functions
-            lin_vel[frame] = jacobian[frame][:3,:] @ self._v
-            ang_vel[frame] = jacobian[frame][3:,:] @ self._v
+            lin_vel[frame] = jacobian[frame][:3, :] @ self._v
+            ang_vel[frame] = jacobian[frame][3:, :] @ self._v
             lin_acc[frame] = (
-                jacobian[frame][:3,:] @ self._dv + djacobian[frame][:3,:] @ self._v
+                jacobian[frame][:3, :] @ self._dv + djacobian[frame][:3, :] @ self._v
             )
             ang_acc[frame] = (
-                jacobian[frame][3:,:] @ self._dv + djacobian[frame][3:,:] @ self._v
+                jacobian[frame][3:, :] @ self._dv + djacobian[frame][3:, :] @ self._v
             )
 
         result = BodyInfo(

@@ -24,9 +24,9 @@ def parse_description_type(description_path: str) -> Callable:
     _, ext = os.path.splitext(description_path)
     ext = ext.lower()
 
-    if ext == '.urdf':
+    if ext == ".urdf":
         return pin.buildModelFromUrdf
-    elif ext == '.xml':
+    elif ext == ".xml":
         return pin.buildModelFromMJCF
     else:
         raise ValueError(f"Unrecognized description extension: {ext}")
@@ -139,9 +139,7 @@ class PinocchioBased:
         if root_joint is None or root_joint == JointType.OMIT:
             model: pin.Model = builder(description_path)
         else:
-            model: pin.Model = builder(
-                description_path, joint_types[root_joint]
-            )
+            model: pin.Model = builder(description_path, joint_types[root_joint])
 
         # freeze joints and update coordinate
         freeze_joint_indices = []
@@ -161,10 +159,11 @@ class PinocchioBased:
             else:
                 zero_q[joint_id] = joint_value
 
-        self._pinmodel: pin.Model = pin.buildReducedModel(model,
-                                                          freeze_joint_indices,
-                                                          zero_q,
-                                                          )
+        self._pinmodel: pin.Model = pin.buildReducedModel(
+            model,
+            freeze_joint_indices,
+            zero_q,
+        )
         self._pindata: pin.Data = self._pinmodel.createData()
 
     @property
@@ -362,5 +361,4 @@ class BackendBase(ABC, PinocchioBased):
         q: ArrayLike | None = None,
         v: ArrayLike | None = None,
         dt: float = 1,
-    ) -> ArrayLike:
-        ...
+    ) -> ArrayLike: ...

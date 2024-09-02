@@ -206,7 +206,7 @@ class PinocchioBackend(BackendBase):
         self.__dJcom_dt = pin.getCenterOfMassVelocityDerivatives(
             self.__model, self.__data
         )
-    
+
         if dv is not None or tau is not None:
             # we have to calculate centerOfMass only if we computed dv previously
             pin.centerOfMass(self.__model, self.__data, self._q, self._v, self._dv)
@@ -514,13 +514,13 @@ class PinocchioBackend(BackendBase):
                 self.__model, self.__data, frame_idx, fstr
             )
             # TODO: Redo this with standart pin functions
-            lin_vel[frame] = jacobian[frame][:3,:] @ self._v
-            ang_vel[frame] = jacobian[frame][3:,:] @ self._v
+            lin_vel[frame] = jacobian[frame][:3, :] @ self._v
+            ang_vel[frame] = jacobian[frame][3:, :] @ self._v
             lin_acc[frame] = (
-                jacobian[frame][:3,:] @ self._dv + djacobian[frame][:3,:] @ self._v
+                jacobian[frame][:3, :] @ self._dv + djacobian[frame][:3, :] @ self._v
             )
             ang_acc[frame] = (
-                jacobian[frame][3:,:] @ self._dv + djacobian[frame][3:,:] @ self._v
+                jacobian[frame][3:, :] @ self._dv + djacobian[frame][3:, :] @ self._v
             )
 
         result = BodyInfo(
