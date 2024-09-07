@@ -1,6 +1,7 @@
 import pinocchio as pin
 
-from ._base import BackendBase, BodyInfo, ConeBase, Frame, JointType, CentroidalDynamics
+from ._base import BackendBase, ConeBase
+from ._structs import Frame, BodyInfo, CentroidalDynamics, JointType
 from ..utils.arrays import ArrayLike, NumpyLikeFactory
 import numpy as np
 import numpy.typing as npt
@@ -488,9 +489,13 @@ class PinocchioBackend(BackendBase):
 
         return phi_p, dphi_h
 
-    def update_body(self, body: str, body_urdf_name: str = None) -> BodyInfo:
+    def update_body(self, body: str, body_urdf_name: str | None = None) -> BodyInfo:
         if body_urdf_name is None:
             body_urdf_name = body
+
+        # check that body_urdf_name is in the model
+        if not self.__model.existFrame(body_urdf_name):
+            raise KeyError(f"Link {body_urdf_name} not found in the model")
 
         # if we have cached information about body, clean it
         if body_urdf_name in self.__body_info_cache:
@@ -504,9 +509,11 @@ class PinocchioBackend(BackendBase):
         ang_vel = {}
         lin_acc = {}
         ang_acc = {}
+
+        pin.framesForwardKinematics(self.__model, self.__data, self._q)
+
         for frame_str, fstr in self.__frame_mapping.items():
             frame = Frame.from_str(frame_str)
-            pin.framesForwardKinematics(self.__model, self.__data, self._q)
             jacobian[frame] = pin.getFrameJacobian(
                 self.__model, self.__data, frame_idx, fstr
             )

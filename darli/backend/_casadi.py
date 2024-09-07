@@ -1,7 +1,8 @@
 import pinocchio.casadi as cpin
 import pinocchio as pin
 from .liecasadi import SO3
-from ._base import BackendBase, ConeBase, Frame, BodyInfo, JointType, CentroidalDynamics
+from ._base import BackendBase, ConeBase
+from ._structs import Frame, BodyInfo, CentroidalDynamics, JointType
 from ..utils.arrays import CasadiLikeFactory, ArrayLike
 import casadi as cs
 from typing import Dict
@@ -179,6 +180,7 @@ class CasadiBackend(BackendBase):
         }
 
         self.__frame_types = self.__frame_mapping.keys()
+        self.__centroidal_derivatives = None
 
     @property
     def nq(self) -> int:
@@ -202,6 +204,11 @@ class CasadiBackend(BackendBase):
             self._dv = dv
         if tau is not None:
             self._tau = tau
+
+        if dv is not None or tau is not None:
+            self.__centroidal_derivatives = cpin.computeCentroidalDynamicsDerivatives(
+                self.__model, self.__data, self._q, self._v, self._dv
+            )
 
     def rnea(
         self,
@@ -490,9 +497,13 @@ class CasadiBackend(BackendBase):
             v_inp if v_inp is not None else self._v,
         )
 
-    def update_body(self, body: str, body_urdf_name: str = None) -> BodyInfo:
+    def update_body(self, body: str, body_urdf_name: str | None = None) -> BodyInfo:
         if body_urdf_name is None:
             body_urdf_name = body
+
+        # check that the frame is present in the model
+        if not self.__model.existFrame(body_urdf_name):
+            raise KeyError(f"Frame {body_urdf_name} does not exist in the model")
 
         frame_idx = self.__model.getFrameId(body_urdf_name)
 
