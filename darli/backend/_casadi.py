@@ -224,12 +224,6 @@ class CasadiBackend(BackendBase):
             dv if dv is not None else self._dv,
         )
 
-        return self.__kindyn.rnea()(
-            q=q if q is not None else self._q,
-            v=v if v is not None else self._v,
-            a=dv if dv is not None else self._dv,
-        )["tau"]
-
     def aba(
         self,
         q: ArrayLike | None = None,
@@ -243,15 +237,9 @@ class CasadiBackend(BackendBase):
             v if v is not None else self._v,
             tau if tau is not None else self._tau,
         )
-        return self.__kindyn.aba()(
-            q=q if q is not None else self._q,
-            v=v if v is not None else self._v,
-            tau=tau if tau is not None else self._tau,
-        )["a"]
 
     def inertia_matrix(self, q: ArrayLike | None = None) -> ArrayLike:
         return cpin.crba(self.__model, self.__data, q if q is not None else self._q)
-        # return self.__kindyn.crba()(q=q if q is not None else self._q)["B"]
 
     def kinetic_energy(
         self, q: ArrayLike | None = None, v: ArrayLike | None = None
@@ -262,23 +250,16 @@ class CasadiBackend(BackendBase):
             q if q is not None else self._q,
             v if v is not None else self._v,
         )
-        return self.__kindyn.kineticEnergy()(
-            q=q if q is not None else self._q, v=v if v is not None else self._v
-        )["DT"]
 
     def potential_energy(self, q: ArrayLike | None = None) -> ArrayLike:
         return cpin.computePotentialEnergy(
             self.__model, self.__data, q if q is not None else self._q
         )
-        return self.__kindyn.potentialEnergy()(q=q if q is not None else self._q)["DU"]
 
     def jacobian(self, q: ArrayLike | None = None) -> ArrayLike:
         return cpin.jacobianCenterOfMass(
             self.__model, self.__data, q if q is not None else self._q
         )
-        return self.__kindyn.jacobianCenterOfMass(False)(
-            q=q if q is not None else self._q
-        )["Jcom"]
 
     def jacobian_dt(
         self, q: ArrayLike | None = None, v: ArrayLike | None = None
@@ -297,12 +278,6 @@ class CasadiBackend(BackendBase):
             self.__model, self.__data, q if q is not None else self._q
         )
 
-        return self.__kindyn.centerOfMass()(
-            q=q if q is not None else self._q,
-            v=self.math.zeros(self.nv).array,
-            a=self.math.zeros(self.nv).array,
-        )["com"]
-
     def com_vel(
         self, q: ArrayLike | None = None, v: ArrayLike | None = None
     ) -> ArrayLike:
@@ -314,12 +289,6 @@ class CasadiBackend(BackendBase):
         )
 
         return self.__data.vcom[0]
-
-        return self.__kindyn.centerOfMass()(
-            q=q if q is not None else self._q,
-            v=v if v is not None else self._v,
-            a=self.math.zeros(self.nv).array,
-        )["vcom"]
 
     def com_acc(
         self,
@@ -336,12 +305,6 @@ class CasadiBackend(BackendBase):
         )
 
         return self.__data.acom[0]
-        # return None
-        return self.__kindyn.centerOfMass()(
-            q=q if q is not None else self._q,
-            v=v if v is not None else self._v,
-            a=dv if dv is not None else self._dv,
-        )["acom"]
 
     def torque_regressor(
         self,
@@ -357,12 +320,6 @@ class CasadiBackend(BackendBase):
             dv if dv is not None else self._dv,
         )
 
-        return self.__kindyn.jointTorqueRegressor()(
-            q=q if q is not None else self._q,
-            v=v if v is not None else self._v,
-            a=dv if dv is not None else self._dv,
-        )["regressor"]
-
     def kinetic_regressor(
         self,
         q: ArrayLike | None = None,
@@ -375,11 +332,6 @@ class CasadiBackend(BackendBase):
             v if v is not None else self._v,
         )
 
-        return self.__kindyn.kineticEnergyRegressor()(
-            q=q if q is not None else self._q,
-            v=v if v is not None else self._v,
-        )["kinetic_regressor"]
-
     def potential_regressor(
         self,
         q: ArrayLike | None = None,
@@ -389,9 +341,6 @@ class CasadiBackend(BackendBase):
             self.__data,
             q if q is not None else self._q,
         )
-        return self.__kindyn.potentialEnergyRegressor()(
-            q=q if q is not None else self._q,
-        )["potential_regressor"]
 
     def _spatial_kinetic_energy_jacobian(self):
         # Define CasADi symbolic variables
@@ -561,52 +510,6 @@ class CasadiBackend(BackendBase):
         dt: float | cs.SX = 1.0,
     ) -> ArrayLike:
         return cpin.integrate(self.__model, q, v * dt)
-
-        if self.nq != self.nv:
-            q = q if q is not None else self._q
-            v = v if v is not None else self._v
-
-            # we have to use lie geometry
-            # to integrate se3 and joint space separately
-            # TODO:
-            # replace with SE3
-            # what if someone will fix base position?
-            pos = q[:3]
-            xyzw = q[3:7]
-            so3 = lie.SO3(xyzw)
-            joints = q[7:]
-
-            pos_tang = v[:3] * dt
-            so3_tang = lie.SO3Tangent(v[3:6] * dt)
-            joint_tang = v[6:] * dt
-
-            # se3 = lie.SE3(pos=pos, xyzw=xyzw)
-            # se3_tang = lie.SE3Tangent(v[:6] * dt)
-            # container[:3] = se3_next.xyzw
-            # container[3:7] = se3_next.xyzw
-            # se3_next = se3 + so3_tang
-
-            pos_next = pos + pos_tang
-            so3_next = so3 + so3_tang
-            joints_next = joints + joint_tang
-
-            container = cs.SX.zeros(self.nq)
-            configuration_next = cs.vertcat(pos_next, so3_next.xyzw, joints_next)
-            # container[:3] = pos_next
-            # container[3:7] = so3_next.xyzw
-            # container[7:] = joints_next
-            container = configuration_next
-            return container
-        else:
-            return (q if q is not None else self._q) + (
-                v if v is not None else self._v
-            ) * dt
-
-        # do not ever try to use this in optimization
-        # return self.__kindyn.integrate()(
-        #     q=q if q is not None else self._q,
-        #     v=v * dt if v is not None else self._v * dt,
-        # )["qnext"]
 
     def centroidal_dynamics(
         self,

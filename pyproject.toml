@@ -3,7 +3,7 @@ name = "darli"
 description = "The DARLi is a Python 3 library that supports numerical and symbolical computations of open loop articulated robots provided urdf file."
 version = "0.5.0"
 authors = [{ name = "Lev Kozlov" }, { name = "Simeon Nedelchev" }]
-dependencies = []
+dependencies = ["pytest>=8.3.2,<9", "robot-descriptions>=1.12.0,<2", "mujoco>=3.2.2,<4", "pytest-cov>=5.0.0,<6"]
 readme = "README.md"
 requires-python = ">=3.9"
 
